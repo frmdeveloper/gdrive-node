@@ -19,6 +19,7 @@ import path from 'path';
 export { getDriveService }                            from './auth.js';
 export { DriveClient, FOLDER_MIME, DRIVE_FIELDS }    from './client.js';
 export { restoreFolder }                              from './restore.js';
+export { backupFolder }                               from './backup.js';
 export { startWatch }                                 from './watch.js';
 export { humanSize, downloadToPath }                  from './utils.js';
 export { printFileList }                              from './commands.js';
@@ -26,6 +27,7 @@ export { printFileList }                              from './commands.js';
 import { getDriveService }    from './auth.js';
 import { DriveClient }        from './client.js';
 import { restoreFolder }      from './restore.js';
+import { backupFolder }       from './backup.js';
 import { startWatch }         from './watch.js';
 import { downloadToPath }     from './utils.js';
 
@@ -147,6 +149,16 @@ export async function create(opts = {}) {
     async restore(folderId, localDir) {
       await fs.mkdir(localDir, { recursive: true });
       return restoreFolder(client, folderId, localDir);
+    },
+
+    /**
+     * Upload semua file dalam folder lokal ke Drive secara rekursif.
+     * @param {string} localDir
+     * @param {string} folderId
+     * @returns {Promise<{ok: number, failed: number}>}
+     */
+    backup(localDir, folderId) {
+      return backupFolder(client, localDir, folderId);
     },
 
     /**

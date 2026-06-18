@@ -16,6 +16,7 @@ import {
   cmdMkdir,
   cmdDelete,
   cmdInfo,
+  cmdBackup,
   cmdRestore,
   cmdWatch,
 } from '../src/commands.js';
@@ -30,6 +31,7 @@ const COMMANDS = {
   mkdir    : cmdMkdir,
   delete   : cmdDelete,
   info     : cmdInfo,
+  backup   : cmdBackup,
   restore  : cmdRestore,
   watch    : cmdWatch,
 };
@@ -40,24 +42,24 @@ const HELP = `
 gdrive <perintah> [opsi]
 
 Perintah:
-  list     [parent-id] [-l]          Daftar file/folder (root jika tanpa ID)
-  search   <kata-kunci> [-l]         Cari file berdasarkan nama
+  list     [parent-id]               Daftar file/folder (root jika tanpa ID)
+  search   <kata-kunci>              Cari file berdasarkan nama
   upload   <path> [parent-id]        Upload file ke Drive
   download <file-id> [output-path]   Download file dari Drive
   mkdir    <nama> [parent-id]        Buat folder baru
   delete   <file-id>                 Hapus file/folder permanen
   info     <file-id>                 Tampilkan metadata lengkap
+  backup   <local-dir> <folder-id>   Upload semua file lokal ke Drive
   restore  <folder-id> <local-dir>   Download seluruh folder Drive ke lokal
   watch    <local-dir> <folder-id>   Pantau folder lokal & sinkron ke Drive
 
 Opsi:
-  -l, --long   Tampilkan file ID (berlaku untuk list dan search)
   -h, --help   Tampilkan bantuan ini
 
 Contoh:
   gdrive list
-  gdrive list 1AbC_folderId -l
-  gdrive search "laporan 2024" -l
+  gdrive list 1AbC_folderId
+  gdrive search "laporan 2024"
   gdrive upload ./dokumen.pdf
   gdrive upload ./dokumen.pdf 1AbC_parentId
   gdrive download 1XyZ_fileId

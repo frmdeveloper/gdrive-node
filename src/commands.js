@@ -11,7 +11,8 @@ import path from 'path';
 import { FOLDER_MIME } from './client.js';
 import { humanSize, downloadToPath } from './utils.js';
 import { restoreFolder } from './restore.js';
-import { startWatch } from './watch.js';
+import { backupFolder }  from './backup.js';
+import { startWatch }    from './watch.js';
 
 // ── Helpers tampilan ─────────────────────────────────────────────────────────
 
@@ -108,6 +109,20 @@ export async function cmdInfo(client, args) {
   if (f.parents?.length)  rows.push(['Parent', f.parents.join(', ')]);
   if (f.webViewLink)      rows.push(['Link',   f.webViewLink]);
   for (const [k, v] of rows) console.log(`${k.padEnd(8)}: ${v}`);
+}
+
+/** gdrive backup <local-dir> <drive-folder-id> */
+export async function cmdBackup(client, args) {
+  if (args.length < 2) throw new Error('Penggunaan: gdrive backup <local-dir> <drive-folder-id>');
+  const [localDir, folderId] = args;
+
+  // Pastikan folder lokal ada
+  const stat = await fs.stat(localDir).catch(() => null);
+  if (!stat?.isDirectory()) throw new Error(`Bukan folder yang valid: ${localDir}`);
+
+  console.log(`📦 Backup ${localDir}  →  Drive ${folderId}\n`);
+  const { ok, failed } = await backupFolder(client, localDir, folderId);
+  console.log(`\nBackup selesai: ${ok} berhasil, ${failed} gagal`);
 }
 
 /** gdrive restore <drive-folder-id> <local-dir> */

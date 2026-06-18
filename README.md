@@ -14,6 +14,7 @@
 - 📂 **Mkdir** buat folder baru
 - 🗑️  **Delete** hapus permanen
 - ℹ️  **Info** metadata lengkap file
+- 📦 **Backup** upload semua file lokal ke Drive secara rekursif
 - 🔄 **Restore** download seluruh folder secara rekursif
 - 👁️  **Watch** pantau folder lokal & sinkron ke Drive real-time
 
@@ -22,8 +23,7 @@
 ## 📦 Instalasi
 
 ```bash
-npm install
-npm link   # opsional — akses CLI global via `gdrive`
+npm install gdrive@github:frmdeveloper/gdrive-node
 ```
 
 **Dependensi:**
@@ -104,6 +104,23 @@ Diubah  : 2024-03-20T14:30:00.000Z
 Link    : https://drive.google.com/...
 ```
 
+### 📦 Backup
+```bash
+gdrive backup ./proyek 1AbC_folderId
+```
+```
+📦 Backup ./proyek  →  Drive 1AbC_folderId
+
+[upload] src/index.js
+[upload] src/auth.js
+[mkdir]  src/utils
+[upload] src/utils/helper.js
+[update] README.md
+
+Backup selesai: 5 berhasil, 0 gagal
+```
+> 💡 File yang sudah ada di Drive akan di-update, bukan duplikat
+
 ### 🔄 Restore
 ```bash
 gdrive restore 1AbC_folderId ./backup-lokal
@@ -131,7 +148,7 @@ Tekan Ctrl+C untuk berhenti.
 ### 🚀 High-level API
 
 ```js
-import { create } from 'gdrive-node';
+import { create } from 'gdrive';
 
 const drive = await create();
 
@@ -158,6 +175,9 @@ await drive.remove('1XyZ_fileId');
 // ℹ️ Info
 const info = await drive.info('1XyZ_fileId');
 
+// 📦 Backup
+const { ok, failed } = await drive.backup('./proyek', '1AbC_folderId');
+
 // 🔄 Restore
 const { ok, failed } = await drive.restore('1AbC_folderId', './lokal');
 console.log(`✅ ${ok} berhasil, ❌ ${failed} gagal`);
@@ -171,7 +191,7 @@ watcher.stop(); // 🛑 berhenti
 ### 🔧 Low-level API
 
 ```js
-import { getDriveService, DriveClient, startWatch, restoreFolder } from 'gdrive-node';
+import { getDriveService, DriveClient, startWatch, restoreFolder } from 'gdrive';
 
 const auth   = await getDriveService({ credentialsFile: 'creds.json' });
 const client = new DriveClient(auth);
@@ -195,6 +215,7 @@ gdrive-node/
     ├── 📄 client.js         ← 🌐 DriveClient (API wrapper)
     ├── 📄 utils.js          ← 🛠️  humanSize, downloadToPath
     ├── 📄 watch.js          ← 👁️  FolderCache + startWatch
+    ├── 📄 backup.js         ← 📦 backupFolder
     ├── 📄 restore.js        ← 🔄 restoreFolder
     ├── 📄 commands.js       ← 🖥️  handler perintah CLI
     └── 📄 index.js          ← 📦 public exports + create()
