@@ -45,6 +45,29 @@ npm install gdrive@github:frmdeveloper/gdrive-node
 5. Jalankan perintah apapun → browser terbuka untuk login 🌐
 6. Token tersimpan otomatis ke `token.json` ✅
 
+### 📁 Custom Path Credentials & Token
+
+Bisa diatur lewat **flag**, **env var**, atau **opsi di kode**:
+
+```bash
+# Flag CLI
+gdrive --credentials ~/.config/gdrive/creds.json --token ~/.config/gdrive/token.json list
+gdrive -c ./creds.json -t ./token.json watch ./proyek 1AbC_folderId
+
+# Environment variable
+GDRIVE_CREDENTIALS=~/.config/gdrive/creds.json \
+GDRIVE_TOKEN=~/.config/gdrive/token.json \
+gdrive list
+```
+
+```js
+// Opsi di kode
+const drive = await create({
+  credentialsFile: './config/creds.json',
+  tokenFile      : './config/token.json',
+});
+```
+
 ---
 
 ## 🖥️ CLI
@@ -123,7 +146,7 @@ Backup selesai: 5 berhasil, 0 gagal
 
 ### 🔄 Restore
 ```bash
-gdrive restore 1AbC_folderId ./backup-lokal
+gdrive restore ./backup-lokal 1AbC_folderId
 ```
 > Mendownload seluruh folder Drive beserta sub-foldernya 📥
 
@@ -179,7 +202,7 @@ const info = await drive.info('1XyZ_fileId');
 const { ok, failed } = await drive.backup('./proyek', '1AbC_folderId');
 
 // 🔄 Restore
-const { ok, failed } = await drive.restore('1AbC_folderId', './lokal');
+const { ok, failed } = await drive.restore('./lokal', '1AbC_folderId');
 console.log(`✅ ${ok} berhasil, ❌ ${failed} gagal`);
 
 // 👁️ Watch

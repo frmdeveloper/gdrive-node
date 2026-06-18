@@ -146,9 +146,9 @@ export async function create(opts = {}) {
      * @param {string} localDir
      * @returns {Promise<{ok: number, failed: number}>}
      */
-    async restore(folderId, localDir) {
+    async restore(localDir, folderId) {
       await fs.mkdir(localDir, { recursive: true });
-      return restoreFolder(client, folderId, localDir);
+      return restoreFolder(client, localDir, folderId);
     },
 
     /**

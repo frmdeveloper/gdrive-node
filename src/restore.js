@@ -15,7 +15,7 @@ import { downloadToPath } from './utils.js';
  * @param {string}      localDir   - Path lokal tujuan (harus sudah ada)
  * @returns {Promise<{ok: number, failed: number}>}
  */
-export async function restoreFolder(client, folderId, localDir) {
+export async function restoreFolder(client, localDir, folderId) {
   let ok = 0, failed = 0, pageToken = '';
 
   while (true) {
@@ -28,7 +28,7 @@ export async function restoreFolder(client, folderId, localDir) {
       if (file.mimeType === FOLDER_MIME) {
         try {
           await fs.mkdir(localPath, { recursive: true });
-          const sub = await restoreFolder(client, file.id, localPath);
+          const sub = await restoreFolder(client, localPath, file.id);
           ok     += sub.ok;
           failed += sub.failed;
         } catch (err) {

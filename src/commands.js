@@ -125,12 +125,12 @@ export async function cmdBackup(client, args) {
   console.log(`\nBackup selesai: ${ok} berhasil, ${failed} gagal`);
 }
 
-/** gdrive restore <drive-folder-id> <local-dir> */
+/** gdrive restore <local-dir> <folder-id> */
 export async function cmdRestore(client, args) {
-  if (args.length < 2) throw new Error('Penggunaan: gdrive restore <drive-folder-id> <local-dir>');
-  const [folderId, localDir] = args;
+  if (args.length < 2) throw new Error('Penggunaan: gdrive restore <local-dir> <drive-folder-id>');
+  const [localDir, folderId] = args;
   await fs.mkdir(localDir, { recursive: true });
-  const { ok, failed } = await restoreFolder(client, folderId, localDir);
+  const { ok, failed } = await restoreFolder(client, localDir, folderId);
   console.log(`\nRestore selesai: ${ok} berhasil, ${failed} gagal`);
 }
 

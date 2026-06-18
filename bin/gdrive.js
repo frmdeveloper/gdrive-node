@@ -1,9 +1,13 @@
 #!/usr/bin/env node
 /**
- * bin/gdrive.js — CLI entry point (port dari main.go + commands.go)
+ * bin/gdrive.js — CLI entry point
  *
  * Penggunaan:
- *   gdrive <perintah> [argumen...]
+ *   gdrive [--credentials <path>] [--token <path>] <perintah> [argumen...]
+ *
+ * Env vars (fallback):
+ *   GDRIVE_CREDENTIALS   path ke credentials.json
+ *   GDRIVE_TOKEN         path ke token.json
  */
 
 import { getDriveService } from '../src/auth.js';
@@ -39,7 +43,7 @@ const COMMANDS = {
 // ── Teks bantuan ──────────────────────────────────────────────────────────────
 
 const HELP = `
-gdrive <perintah> [opsi]
+gdrive [opsi-global] <perintah> [argumen...]
 
 Perintah:
   list     [parent-id]               Daftar file/folder (root jika tanpa ID)
@@ -50,30 +54,53 @@ Perintah:
   delete   <file-id>                 Hapus file/folder permanen
   info     <file-id>                 Tampilkan metadata lengkap
   backup   <local-dir> <folder-id>   Upload semua file lokal ke Drive
-  restore  <folder-id> <local-dir>   Download seluruh folder Drive ke lokal
+  restore  <local-dir> <folder-id>   Download seluruh folder Drive ke lokal
   watch    <local-dir> <folder-id>   Pantau folder lokal & sinkron ke Drive
 
-Opsi:
-  -h, --help   Tampilkan bantuan ini
+Opsi global:
+  -c, --credentials <path>   Path ke credentials.json  [default: credentials.json]
+  -t, --token <path>         Path ke token.json        [default: token.json]
+  -h, --help                 Tampilkan bantuan ini
+
+Env vars:
+  GDRIVE_CREDENTIALS   Sama seperti --credentials
+  GDRIVE_TOKEN         Sama seperti --token
 
 Contoh:
   gdrive list
-  gdrive list 1AbC_folderId
-  gdrive search "laporan 2024"
-  gdrive upload ./dokumen.pdf
-  gdrive upload ./dokumen.pdf 1AbC_parentId
-  gdrive download 1XyZ_fileId
-  gdrive download 1XyZ_fileId ./salinan.pdf
-  gdrive mkdir "Arsip Q1" 1AbC_parentId
-  gdrive delete 1XyZ_fileId
-  gdrive info 1XyZ_fileId
-  gdrive restore 1AbC_folderId ./backup
-  gdrive watch ./proyek 1AbC_folderId
+  gdrive --credentials ~/.config/gdrive/creds.json list
+  gdrive -c ./creds.json -t ./token.json watch ./proyek 1AbC_folderId
+  GDRIVE_CREDENTIALS=./creds.json gdrive upload ./file.pdf
 `.trim();
+
+// ── Parse argumen global ──────────────────────────────────────────────────────
+
+function parseArgs(argv) {
+  const opts = {
+    credentialsFile : process.env.GDRIVE_CREDENTIALS ?? 'credentials.json',
+    tokenFile       : process.env.GDRIVE_TOKEN       ?? 'token.json',
+  };
+  const rest = [];
+
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '-c' || a === '--credentials') {
+      opts.credentialsFile = argv[++i];
+    } else if (a === '-t' || a === '--token') {
+      opts.tokenFile = argv[++i];
+    } else {
+      rest.push(a);
+    }
+  }
+
+  return { opts, rest };
+}
 
 // ── Dispatch ──────────────────────────────────────────────────────────────────
 
-const [, , cmd, ...args] = process.argv;
+const rawArgs = process.argv.slice(2);
+const { opts, rest } = parseArgs(rawArgs);
+const [cmd, ...args] = rest;
 
 if (!cmd || cmd === '-h' || cmd === '--help') {
   console.log(HELP);
@@ -87,7 +114,7 @@ if (!COMMANDS[cmd]) {
 }
 
 try {
-  const auth   = await getDriveService();
+  const auth   = await getDriveService(opts);
   const client = new DriveClient(auth);
   await COMMANDS[cmd](client, args);
 } catch (err) {
