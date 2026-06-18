@@ -1,0 +1,21 @@
+{
+  "name": "gdrive-node",
+  "version": "1.0.0",
+  "description": "Google Drive CLI dan library Node.js",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "bin": {
+    "gdrive": "./bin/gdrive.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "chokidar": "^3.6.0",
+    "google-auth-library": "^9.14.0",
+    "googleapis": "^144.0.0"
+  }
+}
