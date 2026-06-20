@@ -167,8 +167,8 @@ export async function create(opts = {}) {
      * @param {string} folderId
      * @returns {Promise<{stop(): Promise<void>}>}
      */
-    watch(localDir, folderId) {
-      return startWatch(client, localDir, folderId);
+    watch(localDir, folderId, opts) {
+      return startWatch(client, localDir, folderId, opts);
     },
   };
 }

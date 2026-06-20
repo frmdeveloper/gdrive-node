@@ -32,9 +32,11 @@ class FolderCache {
   #client;
   #cache   = new Map();   // relPath → driveId
   #pending = new Map();   // relPath → Promise<driveId>  (in-flight)
+  #log;
 
-  constructor(client, rootId) {
+  constructor(client, rootId, log = console.log) {
     this.#client = client;
+    this.#log    = log;
     this.#cache.set('.', rootId);
   }
 
@@ -81,7 +83,7 @@ class FolderCache {
 
     // Buat folder baru
     const created = await this.#client.createFolder(name, [parentId]);
-    console.log(`[mkdir] ${relPath}`);
+    this.#log(`[mkdir] ${relPath}`);
     return created.id;
   }
 }
@@ -94,25 +96,29 @@ class FolderCache {
  * @param {DriveClient} client
  * @param {string}      localDir       - Folder lokal yang dipantau
  * @param {string}      rootFolderId   - Drive folder-id tujuan
- * @returns {Promise<{stop(): Promise<void>}>}
+ * @param {object}      [opts]
+ * @param {boolean}     [opts.silent]  - Matikan semua log (default: false)
+ * @returns {Promise<{stop(): Promise<void>, silent(bool): void}>}
  */
-export async function startWatch(client, localDir, rootFolderId) {
+export async function startWatch(client, localDir, rootFolderId, { silent = false } = {}) {
   const stat = await fs.stat(localDir).catch(() => null);
   if (!stat?.isDirectory()) {
     throw new Error(`Bukan folder yang valid: ${localDir}`);
   }
 
-  // Lazy-load chokidar agar package ini tetap bisa dipakai tanpa chokidar
-  // jika startWatch tidak dipanggil
   const { default: chokidar } = await import('chokidar');
 
-  const cache = new FolderCache(client, rootFolderId);
+  let _silent = silent;
+  const log   = (...a) => { if (!_silent) console.log(...a); };
+  const err   = (...a) => { if (!_silent) console.error(...a); };
+
+  const cache = new FolderCache(client, rootFolderId, log);
 
   const watcher = chokidar.watch(localDir, {
     persistent      : true,
     ignoreInitial   : true,
-    ignored         : /(^|[/\\])\./,        // skip dotfile/dotfolder
-    awaitWriteFinish: {                      // tunggu file selesai ditulis
+    ignored         : /(^|[/\\])\./,
+    awaitWriteFinish: {
       stabilityThreshold : 300,
       pollInterval       : 100,
     },
@@ -137,13 +143,13 @@ export async function startWatch(client, localDir, rootFolderId) {
 
       if (existing.files?.length) {
         await client.updateFile(existing.files[0].id, stream);
-        console.log(`[update] ${rel}`);
+        log(`[update] ${rel}`);
       } else {
         await client.createFile(name, [parentId], stream, 'id');
-        console.log(`[upload] ${rel}`);
+        log(`[upload] ${rel}`);
       }
-    } catch (err) {
-      console.error(`[${rel}] error: ${err.message}`);
+    } catch (e) {
+      err(`[${rel}] error: ${e.message}`);
     }
   }
 
@@ -154,7 +160,7 @@ export async function startWatch(client, localDir, rootFolderId) {
     const relDir   = normPath(path.posix.dirname(rel));
     const parentId = cache.lookup(relDir);
 
-    if (!parentId) return;   // folder parent belum pernah dikenal, skip
+    if (!parentId) return;
 
     try {
       const result = await client.listFilesRaw({
@@ -165,19 +171,25 @@ export async function startWatch(client, localDir, rootFolderId) {
       if (!result.files?.length) return;
 
       await client.deleteFile(result.files[0].id);
-      console.log(`[delete] ${rel}`);
-    } catch (err) {
-      console.error(`[${rel}] gagal hapus di Drive: ${err.message}`);
+      log(`[delete] ${rel}`);
+    } catch (e) {
+      err(`[${rel}] gagal hapus di Drive: ${e.message}`);
     }
   }
 
   watcher.on('add',    onUpsert);
   watcher.on('change', onUpsert);
   watcher.on('unlink', onRemove);
-  watcher.on('error',  (err) => console.error('watcher error:', err.message));
+  watcher.on('error',  (e) => err('watcher error:', e.message));
 
   return {
     /** Hentikan watcher. */
     stop() { return watcher.close(); },
+
+    /**
+     * Nyalakan / matikan log secara dinamis.
+     * @param {boolean} value  true = tampilkan log, false = sembunyikan
+     */
+    setLog(value) { _silent = !value; },
   };
 }

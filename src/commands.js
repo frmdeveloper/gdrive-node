@@ -134,17 +134,20 @@ export async function cmdRestore(client, args) {
   console.log(`\nRestore selesai: ${ok} berhasil, ${failed} gagal`);
 }
 
-/** gdrive watch <local-dir> <drive-folder-id> */
+/** gdrive watch <local-dir> <drive-folder-id> [--silent] */
 export async function cmdWatch(client, args) {
-  if (args.length < 2) throw new Error('Penggunaan: gdrive watch <local-dir> <drive-folder-id>');
-  const [localDir, folderId] = args;
+  const silent   = args.includes('--silent') || args.includes('-s');
+  const filtered = args.filter(a => a !== '--silent' && a !== '-s');
+
+  if (filtered.length < 2) throw new Error('Penggunaan: gdrive watch <local-dir> <drive-folder-id>');
+  const [localDir, folderId] = filtered;
 
   console.log(`👁️  Memantau ${localDir}  →  Drive ${folderId}`);
+  if (silent) console.log('Mode silent aktif — log disembunyikan.');
   console.log('Tekan Ctrl+C untuk berhenti.\n');
 
-  const watcher = await startWatch(client, localDir, folderId);
+  const watcher = await startWatch(client, localDir, folderId, { silent });
 
-  // Blokir sampai Ctrl+C
   await new Promise((resolve) => {
     process.once('SIGINT', async () => {
       console.log('\nMenghentikan watcher...');
