@@ -152,7 +152,11 @@ gdrive restore ./backup-lokal 1AbC_folderId
 
 ### 👁️ Watch
 ```bash
+# Normal
 gdrive watch ./proyek 1AbC_folderId
+
+# Silent — tanpa log
+gdrive watch ./proyek 1AbC_folderId --silent
 ```
 ```
 👁️  Memantau ./proyek  →  Drive 1AbC_folderId
@@ -207,8 +211,12 @@ console.log(`✅ ${ok} berhasil, ❌ ${failed} gagal`);
 
 // 👁️ Watch
 const watcher = await drive.watch('./proyek', '1AbC_folderId');
-// ...
-watcher.stop(); // 🛑 berhenti
+watcher.stop();           // 🛑 berhenti
+watcher.setLog(false);    // 🔇 matikan log
+watcher.setLog(true);     // 🔊 nyalakan lagi
+
+// Silent dari awal
+const w = await drive.watch('./proyek', '1AbC_folderId', { silent: true });
 ```
 
 ### 🔧 Low-level API
