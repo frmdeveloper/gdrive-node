@@ -9,6 +9,7 @@
 import { OAuth2Client } from 'google-auth-library';
 import fs from 'fs/promises';
 import http from 'http';
+import https from 'https';
 
 const CREDENTIALS_FILE = 'credentials.json';
 const TOKEN_FILE       = 'token.json';
@@ -127,7 +128,7 @@ async function getTokenFromWeb(auth) {
       server.close();
 
       try {
-        const tokens = await retryFetch(() => auth.getToken(code).then(r => r.tokens));
+        const tokens = await exchangeCode(auth._clientId, auth._clientSecret, code, REDIRECT_URL);
         console.error('Login berhasil!');
         resolve(tokens);
       } catch (err) {
@@ -142,4 +143,49 @@ async function getTokenFromWeb(auth) {
 
 async function _saveToken(tokenFile, token) {
   await fs.writeFile(tokenFile, JSON.stringify(token, null, 2), { mode: 0o600 });
+}
+
+/**
+ * Tukar auth code dengan token secara manual pakai https native Node.js.
+ * Menghindari masalah "Premature close" dari fetch di google-auth-library.
+ */
+function exchangeCode(clientId, clientSecret, code, redirectUri) {
+  const body = new URLSearchParams({
+    code,
+    client_id     : clientId,
+    client_secret : clientSecret,
+    redirect_uri  : redirectUri,
+    grant_type    : 'authorization_code',
+  }).toString();
+
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname : 'oauth2.googleapis.com',
+      path     : '/token',
+      method   : 'POST',
+      headers  : {
+        'Content-Type'   : 'application/x-www-form-urlencoded',
+        'Content-Length' : Buffer.byteLength(body),
+      },
+    }, (res) => {
+      let raw = '';
+      res.on('data', chunk => { raw += chunk; });
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed.error) {
+            reject(new Error(parsed.error_description ?? parsed.error));
+          } else {
+            resolve(parsed);
+          }
+        } catch (e) {
+          reject(new Error(`Response tidak valid: ${raw}`));
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
 }
