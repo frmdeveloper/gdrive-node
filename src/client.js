@@ -1,13 +1,54 @@
 /**
  * client.js — DriveClient (port dari drive.go + api.go)
  *
- * Semua method Drive API dikumpulkan dalam satu class.
+ * Semua method Drive API dikumpulkan dalam satu class,
+ * dengan retry otomatis untuk error jaringan (termasuk "Premature close"
+ * saat token OAuth di-refresh).
  */
 
 import { google } from 'googleapis';
 
 export const FOLDER_MIME   = 'application/vnd.google-apps.folder';
 export const DRIVE_FIELDS  = 'id,name,mimeType,size,createdTime,modifiedTime,parents,webViewLink';
+
+// ── Retry ─────────────────────────────────────────────────────────────────────
+
+const RETRYABLE = [
+  'Premature close',
+  'fetch failed',
+  'socket hang up',
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'ENOTFOUND',
+  'network timeout',
+];
+
+/**
+ * Jalankan fn(), retry sampai maxAttempts kali jika terjadi error jaringan.
+ * Backoff: 600ms, 1200ms, 1800ms, …
+ *
+ * @param {() => Promise<T>} fn
+ * @param {number} maxAttempts
+ * @returns {Promise<T>}
+ */
+async function retry(fn, maxAttempts = 3) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const msg = err.message ?? '';
+      const isNetwork = RETRYABLE.some(e => msg.includes(e)) || err.code === 'ECONNRESET';
+
+      if (!isNetwork || attempt === maxAttempts) throw err;
+
+      const wait = 600 * attempt;
+      console.error(`[retry] ${msg.split('\n')[0]} — coba lagi dalam ${wait}ms (${attempt}/${maxAttempts - 1})`);
+      await new Promise(r => setTimeout(r, wait));
+    }
+  }
+}
+
+// ── DriveClient ───────────────────────────────────────────────────────────────
 
 export class DriveClient {
   constructor(auth) {
@@ -23,25 +64,25 @@ export class DriveClient {
       fields   : `nextPageToken,files(${DRIVE_FIELDS})`,
     };
     if (pageToken) params.pageToken = pageToken;
-    const res = await this._d.files.list(params);
-    return res.data;   // { files, nextPageToken }
+    const res = await retry(() => this._d.files.list(params));
+    return res.data;
   }
 
   /** Cari file berdasarkan nama (contains). */
   async searchFiles(keyword) {
     const q = `name contains '${keyword.replace(/'/g, "\\'")}' and trashed = false`;
-    const res = await this._d.files.list({
+    const res = await retry(() => this._d.files.list({
       q,
       pageSize : 50,
       orderBy  : 'folder,name',
       fields   : `nextPageToken,files(${DRIVE_FIELDS})`,
-    });
+    }));
     return res.data;
   }
 
   /** Ambil metadata satu file. */
   async getFile(fileId) {
-    const res = await this._d.files.get({ fileId, fields: DRIVE_FIELDS });
+    const res = await retry(() => this._d.files.get({ fileId, fields: DRIVE_FIELDS }));
     return res.data;
   }
 
@@ -53,42 +94,42 @@ export class DriveClient {
    * @param {string}    fields   - Fields yang ingin dikembalikan
    */
   async createFile(name, parents = [], body, fields = DRIVE_FIELDS) {
-    const res = await this._d.files.create({
+    const res = await retry(() => this._d.files.create({
       requestBody : { name, ...(parents.length && { parents }) },
       media       : { mimeType: 'application/octet-stream', body },
       fields,
-    });
+    }));
     return res.data;
   }
 
   /** Update isi file yang sudah ada (tidak mengubah nama/parents). */
   async updateFile(fileId, body) {
-    await this._d.files.update({
+    await retry(() => this._d.files.update({
       fileId,
       media: { mimeType: 'application/octet-stream', body },
-    });
+    }));
   }
 
   /** Buat folder baru. */
   async createFolder(name, parents = []) {
-    const res = await this._d.files.create({
+    const res = await retry(() => this._d.files.create({
       requestBody : { name, mimeType: FOLDER_MIME, ...(parents.length && { parents }) },
       fields      : DRIVE_FIELDS,
-    });
+    }));
     return res.data;
   }
 
   /** Hapus file/folder permanen (bukan ke Trash). */
   async deleteFile(fileId) {
-    await this._d.files.delete({ fileId });
+    await retry(() => this._d.files.delete({ fileId }));
   }
 
   /** Download file — mengembalikan ReadableStream. */
   async downloadFile(fileId) {
-    const res = await this._d.files.get(
+    const res = await retry(() => this._d.files.get(
       { fileId, alt: 'media' },
       { responseType: 'stream' },
-    );
+    ));
     return res.data;
   }
 
@@ -97,16 +138,16 @@ export class DriveClient {
    * Mengembalikan ReadableStream.
    */
   async exportFile(fileId, mimeType) {
-    const res = await this._d.files.export(
+    const res = await retry(() => this._d.files.export(
       { fileId, mimeType },
       { responseType: 'stream' },
-    );
+    ));
     return res.data;
   }
 
   /** Raw list dengan query params bebas — dipakai oleh watch.js. */
   async listFilesRaw(params) {
-    const res = await this._d.files.list(params);
+    const res = await retry(() => this._d.files.list(params));
     return res.data;
   }
 }

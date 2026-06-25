@@ -22,8 +22,15 @@
 
 ## 📦 Instalasi
 
+**Sebagai library:**
 ```bash
 npm install gdrive@github:frmdeveloper/gdrive-node
+```
+
+**Sebagai CLI global:**
+```bash
+npm install -g gdrive@github:frmdeveloper/gdrive-node
+gdrive --help
 ```
 
 **Dependensi:**
