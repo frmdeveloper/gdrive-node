@@ -77,6 +77,23 @@ export async function getDriveService({
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+const RETRYABLE = ['Premature close', 'fetch failed', 'socket hang up', 'ECONNRESET', 'ETIMEDOUT'];
+
+async function retryFetch(fn, maxAttempts = 3) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const msg = err.message ?? '';
+      const isNetwork = RETRYABLE.some(e => msg.includes(e)) || err.code === 'ECONNRESET';
+      if (!isNetwork || attempt === maxAttempts) throw err;
+      const wait = 800 * attempt;
+      console.error(`[retry] ${msg.split('\n')[0]} — coba lagi dalam ${wait}ms (${attempt}/${maxAttempts - 1})`);
+      await new Promise(r => setTimeout(r, wait));
+    }
+  }
+}
+
 async function getTokenFromWeb(auth) {
   const authUrl = auth.generateAuthUrl({
     access_type : 'offline',
@@ -110,7 +127,7 @@ async function getTokenFromWeb(auth) {
       server.close();
 
       try {
-        const { tokens } = await auth.getToken(code);
+        const tokens = await retryFetch(() => auth.getToken(code).then(r => r.tokens));
         console.error('Login berhasil!');
         resolve(tokens);
       } catch (err) {
