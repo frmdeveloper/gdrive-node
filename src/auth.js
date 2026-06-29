@@ -7,6 +7,7 @@
  */
 
 import { OAuth2Client } from 'google-auth-library';
+import { Gaxios } from 'gaxios';
 import fs from 'fs/promises';
 import http from 'http';
 import https from 'https';
@@ -91,6 +92,13 @@ export async function getDriveService({
   }
 
   const auth = new OAuth2Client(client_id, client_secret, REDIRECT_URL);
+
+  // Ganti transporter default (gaxios + node-fetch) dengan instance baru
+  // yang mematikan gzip — mencegah "Premature close" dari gunzip node-fetch
+  auth.transporter = new Gaxios({
+    headers  : { 'Accept-Encoding': 'identity' },
+    decompress: false,
+  });
 
   // Patch refresh token SEBELUM apapun — gantikan gaxios dengan native https
   _patchRefreshToken(auth, client_id, client_secret);
