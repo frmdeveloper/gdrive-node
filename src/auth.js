@@ -1,9 +1,9 @@
 /**
- * auth.js — OAuth2 Google Drive (port dari auth.go)
+ * auth.js — OAuth2 Google Drive
  *
- * - Baca credentials.json (Desktop app dari Google Cloud Console)
- * - Jalankan OAuth flow dengan local HTTP server di port 8765
- * - Simpan / muat ulang token.json secara otomatis
+ * Semua request ke oauth2.googleapis.com (exchange code + refresh token)
+ * pakai https native Node.js — bukan gaxios/node-fetch — untuk menghindari
+ * error "Premature close" yang terjadi di beberapa environment.
  */
 
 import { OAuth2Client } from 'google-auth-library';
@@ -15,6 +15,49 @@ const CREDENTIALS_FILE = 'credentials.json';
 const TOKEN_FILE       = 'token.json';
 const REDIRECT_URL     = 'http://127.0.0.1:8765/callback';
 const DRIVE_SCOPE      = 'https://www.googleapis.com/auth/drive';
+
+// ── Native HTTPS ke Google token endpoint ─────────────────────────────────────
+
+/**
+ * POST ke oauth2.googleapis.com/token pakai https native.
+ * Menghindari masalah gzip/gunzip dari node-fetch di gaxios.
+ */
+function tokenRequest(params) {
+  const body = new URLSearchParams(params).toString();
+
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname : 'oauth2.googleapis.com',
+      path     : '/token',
+      method   : 'POST',
+      headers  : {
+        'Content-Type'    : 'application/x-www-form-urlencoded',
+        'Content-Length'  : Buffer.byteLength(body),
+        'Accept-Encoding' : 'identity',   // matikan gzip agar tidak ada gunzip error
+      },
+    }, (res) => {
+      let raw = '';
+      res.on('data', chunk => { raw += chunk; });
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed.error) {
+            reject(new Error(parsed.error_description ?? parsed.error));
+          } else {
+            resolve(parsed);
+          }
+        } catch {
+          reject(new Error(`Response tidak valid dari Google: ${raw.slice(0, 200)}`));
+        }
+      });
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+// ── getDriveService ───────────────────────────────────────────────────────────
 
 /**
  * Mengembalikan OAuth2Client yang sudah ter-autentikasi.
@@ -29,7 +72,7 @@ export async function getDriveService({
   credentialsFile = CREDENTIALS_FILE,
   tokenFile       = TOKEN_FILE,
 } = {}) {
-  // ── Baca credentials ─────────────────────────────────────────────────────
+  // ── Baca credentials ───────────────────────────────────────────────────────
   let creds;
   try {
     const raw = await fs.readFile(credentialsFile, 'utf8');
@@ -44,24 +87,25 @@ export async function getDriveService({
 
   const { client_id, client_secret } = creds.installed ?? creds.web ?? {};
   if (!client_id || !client_secret) {
-    throw new Error(
-      `Format ${credentialsFile} tidak valid — tidak ditemukan client_id / client_secret.`,
-    );
+    throw new Error(`Format ${credentialsFile} tidak valid — tidak ditemukan client_id / client_secret.`);
   }
 
   const auth = new OAuth2Client(client_id, client_secret, REDIRECT_URL);
 
-  // ── Muat token tersimpan ──────────────────────────────────────────────────
+  // Patch refresh token SEBELUM apapun — gantikan gaxios dengan native https
+  _patchRefreshToken(auth);
+
+  // ── Muat token tersimpan ───────────────────────────────────────────────────
   let savedToken = null;
   try {
     const raw = await fs.readFile(tokenFile, 'utf8');
     savedToken = JSON.parse(raw);
-  } catch { /* belum ada — akan dibuat lewat OAuth flow */ }
+  } catch { /* belum ada */ }
 
   if (savedToken) {
     auth.setCredentials(savedToken);
   } else {
-    const token = await getTokenFromWeb(auth);
+    const token = await _getTokenFromWeb(auth, client_id, client_secret);
     auth.setCredentials(token);
     await _saveToken(tokenFile, token);
   }
@@ -76,26 +120,39 @@ export async function getDriveService({
   return auth;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Internal ──────────────────────────────────────────────────────────────────
 
-const RETRYABLE = ['Premature close', 'fetch failed', 'socket hang up', 'ECONNRESET', 'ETIMEDOUT'];
+/**
+ * Override refreshTokenNoCache agar pakai native https, bukan gaxios/node-fetch.
+ * Dipanggil setiap kali access token expired dan perlu di-refresh.
+ */
+function _patchRefreshToken(auth) {
+  auth.refreshTokenNoCache = async function (refreshTokenVal) {
+    const clientId     = this.clientId_     ?? this.clientId;
+    const clientSecret = this.clientSecret_ ?? this.clientSecret;
 
-async function retryFetch(fn, maxAttempts = 3) {
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      return await fn();
-    } catch (err) {
-      const msg = err.message ?? '';
-      const isNetwork = RETRYABLE.some(e => msg.includes(e)) || err.code === 'ECONNRESET';
-      if (!isNetwork || attempt === maxAttempts) throw err;
-      const wait = 800 * attempt;
-      console.error(`[retry] ${msg.split('\n')[0]} — coba lagi dalam ${wait}ms (${attempt}/${maxAttempts - 1})`);
-      await new Promise(r => setTimeout(r, wait));
+    if (!clientId || !clientSecret || !refreshTokenVal) {
+      throw new Error('Refresh token atau kredensial tidak tersedia.');
     }
-  }
+
+    const raw = await tokenRequest({
+      grant_type    : 'refresh_token',
+      refresh_token : refreshTokenVal,
+      client_id     : clientId,
+      client_secret : clientSecret,
+    });
+
+    // Pertahankan refresh_token lama (Google tidak mengirim ulang di setiap refresh)
+    if (!raw.refresh_token) raw.refresh_token = refreshTokenVal;
+
+    // google-auth-library butuh expiry_date dalam ms, bukan expires_in dalam detik
+    if (raw.expires_in) raw.expiry_date = Date.now() + raw.expires_in * 1000;
+
+    return { tokens: raw, res: null };
+  };
 }
 
-async function getTokenFromWeb(auth) {
+async function _getTokenFromWeb(auth, clientId, clientSecret) {
   const authUrl = auth.generateAuthUrl({
     access_type : 'offline',
     scope       : [DRIVE_SCOPE],
@@ -128,9 +185,16 @@ async function getTokenFromWeb(auth) {
       server.close();
 
       try {
-        const tokens = await exchangeCode(auth._clientId, auth._clientSecret, code, REDIRECT_URL);
+        const raw = await tokenRequest({
+          code,
+          client_id     : clientId,
+          client_secret : clientSecret,
+          redirect_uri  : REDIRECT_URL,
+          grant_type    : 'authorization_code',
+        });
+        if (raw.expires_in) raw.expiry_date = Date.now() + raw.expires_in * 1000;
         console.error('Login berhasil!');
-        resolve(tokens);
+        resolve(raw);
       } catch (err) {
         reject(err);
       }
@@ -143,49 +207,4 @@ async function getTokenFromWeb(auth) {
 
 async function _saveToken(tokenFile, token) {
   await fs.writeFile(tokenFile, JSON.stringify(token, null, 2), { mode: 0o600 });
-}
-
-/**
- * Tukar auth code dengan token secara manual pakai https native Node.js.
- * Menghindari masalah "Premature close" dari fetch di google-auth-library.
- */
-function exchangeCode(clientId, clientSecret, code, redirectUri) {
-  const body = new URLSearchParams({
-    code,
-    client_id     : clientId,
-    client_secret : clientSecret,
-    redirect_uri  : redirectUri,
-    grant_type    : 'authorization_code',
-  }).toString();
-
-  return new Promise((resolve, reject) => {
-    const req = https.request({
-      hostname : 'oauth2.googleapis.com',
-      path     : '/token',
-      method   : 'POST',
-      headers  : {
-        'Content-Type'   : 'application/x-www-form-urlencoded',
-        'Content-Length' : Buffer.byteLength(body),
-      },
-    }, (res) => {
-      let raw = '';
-      res.on('data', chunk => { raw += chunk; });
-      res.on('end', () => {
-        try {
-          const parsed = JSON.parse(raw);
-          if (parsed.error) {
-            reject(new Error(parsed.error_description ?? parsed.error));
-          } else {
-            resolve(parsed);
-          }
-        } catch (e) {
-          reject(new Error(`Response tidak valid: ${raw}`));
-        }
-      });
-    });
-
-    req.on('error', reject);
-    req.write(body);
-    req.end();
-  });
 }
