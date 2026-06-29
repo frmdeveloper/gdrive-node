@@ -93,7 +93,7 @@ export async function getDriveService({
   const auth = new OAuth2Client(client_id, client_secret, REDIRECT_URL);
 
   // Patch refresh token SEBELUM apapun — gantikan gaxios dengan native https
-  _patchRefreshToken(auth);
+  _patchRefreshToken(auth, client_id, client_secret);
 
   // ── Muat token tersimpan ───────────────────────────────────────────────────
   let savedToken = null;
@@ -126,13 +126,10 @@ export async function getDriveService({
  * Override refreshTokenNoCache agar pakai native https, bukan gaxios/node-fetch.
  * Dipanggil setiap kali access token expired dan perlu di-refresh.
  */
-function _patchRefreshToken(auth) {
+function _patchRefreshToken(auth, clientId, clientSecret) {
   auth.refreshTokenNoCache = async function (refreshTokenVal) {
-    const clientId     = this.clientId_     ?? this.clientId;
-    const clientSecret = this.clientSecret_ ?? this.clientSecret;
-
-    if (!clientId || !clientSecret || !refreshTokenVal) {
-      throw new Error('Refresh token atau kredensial tidak tersedia.');
+    if (!refreshTokenVal) {
+      throw new Error('Refresh token tidak ada. Hapus token.json dan login ulang.');
     }
 
     const raw = await tokenRequest({
@@ -142,11 +139,8 @@ function _patchRefreshToken(auth) {
       client_secret : clientSecret,
     });
 
-    // Pertahankan refresh_token lama (Google tidak mengirim ulang di setiap refresh)
     if (!raw.refresh_token) raw.refresh_token = refreshTokenVal;
-
-    // google-auth-library butuh expiry_date dalam ms, bukan expires_in dalam detik
-    if (raw.expires_in) raw.expiry_date = Date.now() + raw.expires_in * 1000;
+    if (raw.expires_in)     raw.expiry_date   = Date.now() + raw.expires_in * 1000;
 
     return { tokens: raw, res: null };
   };
